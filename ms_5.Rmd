@@ -10,7 +10,7 @@ library(janitor)
 library(rvest)
 library(tidyverse)
 ```
- Essentially, last week I figured out how to make all the game tables appear to me. However, I had only mastered calling 1 table into R. 
+ Essentially,  last week I mastered calling game tables into R. This week, I called men's and Women's olympic games into R, added some indicator variables, and got this preliminary estimate on the number of games that were won by the same team in the first end as in total. However, I removed ties from my analysis, which I won't do in the final version. 
 ```{r gather from last time}
 mens_olympic_url_print<- paste0("https://results.worldcurling.org/Championship/DisplayResults?tournamentId=560&associationId=0&teamNumber=0&drawNumber=0")
 games2<-read_html(mens_olympic_url_print)
@@ -22,7 +22,6 @@ games_tab2 <- games2 %>%
 # Here, games_tab is a list of html nodes that contain "div" and then "table", singling out all of the results of the games.
 
 single_game <- games_tab2[[1]] %>% html_table(header = T, fill = T) %>% clean_names()
-single_game
 names<- colnames(single_game)
 # Here, single_game is turning a single game from my list of games into a tibble. I need to make this work for ALL the games in the doc
 
@@ -106,18 +105,46 @@ mens_olympic_results<- mens_test %>% mutate(competition = "olympic_men")
 
 ```
 
-```{r putting olympic men and women together}
+```{r putting olympic men and women together, warning = F}
 olympics<- rbind(womens_olympic_results, mens_olympic_results)
 olympics<- olympics %>% 
   rename(country= draw_number_1_2, 
-         hammer = draw_number_1_3)
-olympics %>% 
-  group_by(competition, id, country) %>% 
-  mutate(first_end_winner = case_when(
-                            x1[1]>x1[2] ~ T,
-                            x1[1]<x1[2] ~ F,
-                            x1[1]==x1[2] ~ F
-                            )  )%>% 
-  view()
+         hammer = draw_number_1_3, 
+         end_score = total) %>% 
+  mutate(x7 = as.numeric(x7), 
+         x8 = as.numeric(x8), 
+         x9 = as.numeric(x9), 
+         x10 = as.numeric(x10),
+         end_score = as.numeric(end_score))
+olympics <- olympics %>% 
+  group_by(competition, id) %>% 
+  mutate(first_end_winner = ifelse(x1[1]>x1[2], country[1], 
+                                   ifelse(x1[2]>x1[1], country[2], NA)),
+         ind_first_end_winner = ifelse(first_end_winner == country, T, F)) %>% 
+  mutate(game_winner = 
+           ifelse(end_score[1] > end_score[2], country[1], 
+                              ifelse(end_score[2]>end_score[1], country[2], NA)), 
+         ind_game_winner = ifelse(game_winner == country, T, F)) %>% 
+  mutate(first_end_first_game = ifelse(game_winner == first_end_winner, T, F))
+
 ```
+```{r time to plot}
+proportion_olympics_quick <- olympics %>% 
+  group_by(competition) %>% 
+  summarize(prop_double_win = mean(first_end_first_game, na.rm = T))
+
+ggplot(proportion_olympics_quick, aes(competition, prop_double_win, fill = competition, label = round(prop_double_win, digits = 3))) + 
+  geom_bar(stat = "identity") + 
+  theme_classic()+
+  labs(
+    title = "Proportion of Curling Games 'decided' in the First End", 
+    subtitle = "of Men's and Women's games in 2018 Winter Olympics", 
+    x = "Event", 
+    y = "Proportion of total games won \nthat were won in the first end"
+  ) + 
+  theme(
+    legend.position = "none") +
+  geom_text(nudge_y = .05)
+```
+
 
