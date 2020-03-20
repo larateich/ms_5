@@ -1,0 +1,123 @@
+---
+title: "Milestone 5 time for plots"
+author: "Lara Teich"
+date: "3/20/2020"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+library(janitor)
+library(rvest)
+library(tidyverse)
+```
+ Essentially, last week I figured out how to make all the game tables appear to me. However, I had only mastered calling 1 table into R. 
+```{r gather from last time}
+mens_olympic_url_print<- paste0("https://results.worldcurling.org/Championship/DisplayResults?tournamentId=560&associationId=0&teamNumber=0&drawNumber=0")
+games2<-read_html(mens_olympic_url_print)
+# this time I piped games2 into div and then table to get past the div barrier. 
+games_tab2 <- games2 %>% 
+  html_nodes("div") %>%
+  html_nodes("table")
+
+# Here, games_tab is a list of html nodes that contain "div" and then "table", singling out all of the results of the games.
+
+single_game <- games_tab2[[1]] %>% html_table(header = T, fill = T) %>% clean_names()
+single_game
+names<- colnames(single_game)
+# Here, single_game is turning a single game from my list of games into a tibble. I need to make this work for ALL the games in the doc
+
+```
+```{r looped call}
+# going to maken empty tibble to later fill in a for loop
+mens_test <- tibble()
+# this defines x as having the correct setup but no data
+x<- single_game %>%  slice(0)
+# this for loop fills x every time with a new game from the games_tab list of
+# html nodes
+
+for(i in 1: length(games_tab2)) {
+  # i is length of games_tab so that it iterates through each
+ x <- games_tab2[[i]] %>% 
+   # html_table is the function that turns the node into a table
+    html_table(header = F, fill = T) %>%
+   # this is kinda hacky. I turned header to F so that it fills the column names
+   # into the first row, then using slice I isolate the second and third rows,
+   # which are the actual data. this produces some amoung of waste since I'm not
+   # ignoring the first row as much as I am simply slicing it out after wards,
+   # but this is the best I could come up with.
+  slice(2:3) 
+ mens_test<- rbind(mens_test, x)
+ # using rbind I add x to my ever-growing mens_test tibble. 
+}
+# setting up a vector of actual column names
+names<- colnames(single_game)
+names <- c(names, "id")
+# adding id at the end
+
+mens_test <- mens_test %>% 
+  # this mutate call makes some assumptions: it assumes that the for loop worked
+  # perfectly and put all the rows into mens_test in perfect order, then this
+  # overlays an identifier on top, which goes "1 , 1 , 2, 2..." etc all the way
+  # down.
+  mutate(id = rep(1:length(games_tab2), each = 2)) %>% 
+  `colnames<-`(names)
+
+
+```
+
+```{r function make}
+ # the goal here is to make what I just called above into a function that I
+ # merely have to paste the url into. I think I'll start by making that function
+
+womens_olympic_url<-paste0("https://results.worldcurling.org/Championship/DisplayResults?tournamentId=561&associationId=0&teamNumber=0&drawNumber=0")
+
+load_html_list<- function(url) {
+  games2<-read_html(url)
+  games_tab2 <- games2 %>% 
+  html_nodes("div") %>%
+  html_nodes("table")
+  games_tab2
+}
+womens_olympic_html<-load_html_list(womens_olympic_url)
+
+get_clean_results<- function(html_list) {
+  test<- tibble()
+  y<- single_game %>%  slice(0)
+  for(i in 1: length(html_list)) {
+    x <- html_list[[i]] %>% 
+      html_table(header = F, fill = T) %>%
+      slice(2:3)
+    test<- rbind(test, x)
+    }
+  names<- colnames(single_game)
+  names <- c(names, "id")
+  test <- test %>% 
+  mutate(id = rep(1:length(html_list), each = 2)) %>% 
+  `colnames<-`(names)
+  test
+}
+
+womens_olympic_results<- get_clean_results(womens_olympic_html) %>% mutate(competition = "olympic_women")
+mens_olympic_results<- mens_test %>% mutate(competition = "olympic_men")
+
+#html processing function needs to have an argument for the printurl, which I
+#think I'll define outside of the function using paste0 because I don't want to
+#mess with putting a long url into a function call.
+
+```
+
+```{r putting olympic men and women together}
+olympics<- rbind(womens_olympic_results, mens_olympic_results)
+olympics<- olympics %>% 
+  rename(country= draw_number_1_2, 
+         hammer = draw_number_1_3)
+olympics %>% 
+  group_by(competition, id, country) %>% 
+  mutate(first_end_winner = case_when(
+                            x1[1]>x1[2] ~ T,
+                            x1[1]<x1[2] ~ F,
+                            x1[1]==x1[2] ~ F
+                            )  )%>% 
+  view()
+```
+
